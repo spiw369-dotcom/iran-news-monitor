@@ -15,6 +15,7 @@ Iran News Monitor
 (فایل .github/workflows/daily-iran-news.yml رو ببین).
 """
 
+import json
 import os
 import re
 import sys
@@ -23,6 +24,9 @@ from datetime import datetime, timedelta, timezone
 
 import feedparser
 import requests
+
+SEEN_FILE = "seen_links.json"
+MAX_SEEN_ENTRIES = 2000  # جلوگیری از بزرگ‌شدن بی‌نهایت فایل حافظه
 
 # ---------------------------------------------------------------------------
 # ۱) منابع خبری. هر منبع یک لینک RSS داره.
@@ -62,9 +66,25 @@ KEYWORDS = [
 ]
 KEYWORD_PATTERN = re.compile("|".join(KEYWORDS), re.IGNORECASE)
 
-# فقط خبرهایی که در این بازه‌ی زمانی منتشر شدن در نظر گرفته می‌شن
-# (برای جلوگیری از ارسال تکراری خبرهای قدیمی هر روز)
-LOOKBACK_HOURS = 30
+# فقط خبرهایی که در این بازه‌ی زمانی منتشر شدن در نظر گرفته می‌شن.
+# چون هر ساعت اجرا می‌شه، بازه رو کوتاه‌تر گذاشتیم (با کمی همپوشانی برای اطمینان).
+# جلوگیری از ارسال تکراری واقعی رو فایل seen_links.json انجام می‌ده.
+LOOKBACK_HOURS = 6
+
+
+def load_seen_links():
+    try:
+        with open(SEEN_FILE, "r", encoding="utf-8") as f:
+            return set(json.load(f))
+    except (FileNotFoundError, json.JSONDecodeError):
+        return set()
+
+
+def save_seen_links(seen_links):
+    # فقط جدیدترین‌ها رو نگه می‌داریم تا فایل بی‌نهایت بزرگ نشه
+    trimmed = list(seen_links)[-MAX_SEEN_ENTRIES:]
+    with open(SEEN_FILE, "w", encoding="utf-8") as f:
+        json.dump(trimmed, f, ensure_ascii=False, indent=2)
 
 
 def is_recent(entry, cutoff):
@@ -83,7 +103,7 @@ def matches_iran(entry):
     return bool(KEYWORD_PATTERN.search(text))
 
 
-def collect_matches():
+def collect_matches(already_sent):
     cutoff = datetime.now(timezone.utc) - timedelta(hours=LOOKBACK_HOURS)
     matches = []
     seen_links = set()
@@ -100,7 +120,7 @@ def collect_matches():
 
         for entry in feed.entries:
             link = entry.get("link", "")
-            if not link or link in seen_links:
+            if not link or link in seen_links or link in already_sent:
                 continue
             if not is_recent(entry, cutoff):
                 continue
@@ -150,10 +170,19 @@ def main():
         print("❌ TELEGRAM_BOT_TOKEN و TELEGRAM_CHAT_ID باید به‌عنوان متغیر محیطی ست بشن.", file=sys.stderr)
         sys.exit(1)
 
-    matches = collect_matches()
-    message = format_message(matches)
-    send_telegram(message, token, chat_id)
-    print(f"✅ انجام شد — {len(matches)} مورد پیدا و ارسال شد.")
+    already_sent = load_seen_links()
+    matches = collect_matches(already_sent)
+
+    # فقط وقتی خبر جدیدی پیدا شده پیام بفرست (برای اجرای ساعتی، پیام "خبری نبود" لازم نیست)
+    if matches:
+        message = format_message(matches)
+        send_telegram(message, token, chat_id)
+
+    for m in matches:
+        already_sent.add(m["link"])
+    save_seen_links(already_sent)
+
+    print(f"✅ انجام شد — {len(matches)} مورد جدید پیدا و ارسال شد.")
 
 
 if __name__ == "__main__":
