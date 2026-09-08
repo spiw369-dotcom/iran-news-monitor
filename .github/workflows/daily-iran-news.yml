@@ -2,8 +2,12 @@ name: Daily Iran News Monitor
 
 on:
   schedule:
-    - cron: "0 4 * * *"
-  workflow_dispatch: {}
+    # هر ساعت، در دقیقه‌ی صفر
+    - cron: "0 * * * *"
+  workflow_dispatch: {}  # امکان اجرای دستی از تب Actions هم هست
+
+permissions:
+  contents: write  # برای این‌که بتونه فایل حافظه (seen_links.json) رو ذخیره کنه
 
 jobs:
   run-monitor:
@@ -25,3 +29,11 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python iran_news_monitor.py
+
+      - name: Save memory file back to the repo
+        run: |
+          git config user.name "iran-news-bot"
+          git config user.email "actions@github.com"
+          git add seen_links.json
+          git diff --staged --quiet || git commit -m "Update seen links"
+          git push
