@@ -24,6 +24,7 @@ from datetime import datetime, timedelta, timezone
 
 import feedparser
 import requests
+from deep_translator import GoogleTranslator
 
 SEEN_FILE = "seen_links.json"
 MAX_SEEN_ENTRIES = 2000  # جلوگیری از بزرگ‌شدن بی‌نهایت فایل حافظه
@@ -98,6 +99,14 @@ def is_recent(entry, cutoff):
     return True
 
 
+def translate_to_persian(text):
+    try:
+        return GoogleTranslator(source="auto", target="fa").translate(text)
+    except Exception as e:
+        print(f"⚠️  ترجمه ناموفق بود، عنوان اصلی نگه داشته شد: {e}", file=sys.stderr)
+        return text
+
+
 def matches_iran(entry):
     text = f"{entry.get('title', '')} {entry.get('summary', '')}"
     return bool(KEYWORD_PATTERN.search(text))
@@ -125,9 +134,11 @@ def collect_matches(already_sent):
             if not is_recent(entry, cutoff):
                 continue
             if matches_iran(entry):
+                original_title = entry.get("title", "بدون عنوان").strip()
                 matches.append({
                     "source": source_name,
-                    "title": entry.get("title", "بدون عنوان").strip(),
+                    "title": translate_to_persian(original_title),
+                    "original_title": original_title,
                     "link": link,
                 })
                 seen_links.add(link)
