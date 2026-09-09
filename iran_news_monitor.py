@@ -157,29 +157,33 @@ def format_message(matches):
     return "\n".join(lines)
 
 
-def send_telegram(text, token, chat_id):
+def send_telegram(text, token, chat_ids):
     # تلگرام محدودیت ۴۰۹۶ کاراکتر روی هر پیام داره؛ در صورت نیاز تکه‌تکه می‌فرستیم
     MAX_LEN = 4000
     chunks = [text[i:i + MAX_LEN] for i in range(0, len(text), MAX_LEN)] or [text]
 
     url = f"https://api.telegram.org/bot{token}/sendMessage"
-    for chunk in chunks:
-        resp = requests.post(url, data={
-            "chat_id": chat_id,
-            "text": chunk,
-            "parse_mode": "Markdown",
-            "disable_web_page_preview": True,
-        })
-        if not resp.ok:
-            print(f"⚠️  ارسال پیام تلگرام ناموفق بود: {resp.status_code} {resp.text}", file=sys.stderr)
+    for chat_id in chat_ids:
+        for chunk in chunks:
+            resp = requests.post(url, data={
+                "chat_id": chat_id.strip(),
+                "text": chunk,
+                "parse_mode": "Markdown",
+                "disable_web_page_preview": True,
+            })
+            if not resp.ok:
+                print(f"⚠️  ارسال پیام تلگرام به {chat_id} ناموفق بود: {resp.status_code} {resp.text}", file=sys.stderr)
 
 
 def main():
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
-    chat_id = os.environ.get("TELEGRAM_CHAT_ID")
-    if not token or not chat_id:
+    chat_id_raw = os.environ.get("TELEGRAM_CHAT_ID")
+    if not token or not chat_id_raw:
         print("❌ TELEGRAM_BOT_TOKEN و TELEGRAM_CHAT_ID باید به‌عنوان متغیر محیطی ست بشن.", file=sys.stderr)
         sys.exit(1)
+
+    # می‌تونی چند تا chat id رو با کاما از هم جدا کنی، مثلاً: "111111,222222,333333"
+    chat_ids = [c for c in chat_id_raw.split(",") if c.strip()]
 
     already_sent = load_seen_links()
     matches = collect_matches(already_sent)
@@ -187,7 +191,7 @@ def main():
     # فقط وقتی خبر جدیدی پیدا شده پیام بفرست (برای اجرای ساعتی، پیام "خبری نبود" لازم نیست)
     if matches:
         message = format_message(matches)
-        send_telegram(message, token, chat_id)
+        send_telegram(message, token, chat_ids)
 
     for m in matches:
         already_sent.add(m["link"])
